@@ -21,12 +21,15 @@ var listenerConnection = null;
 var portSetting = null;
 
 var serialOscPort = 12002;
-var listenerPort = 19999;
+var listenerPort = 19991;
 var hostname = "127.0.0.1";
 var prefix = "/bitwig";
 
 var devices = {};
+
+// Variables to hold arc/grid LED state
 var encs = [0, 0, 0, 0];
+var keys = [...Array(16)].map(_ => Array(16).fill(0));
 
 function init() {
     var oscModule = host.getOscModule();
@@ -63,9 +66,12 @@ function clamp(a, min, max) {
 };
 
 function onConnection(device) {
-    for (var i = 0; i < 4; i++) {
-        device.sendMessage(prefix + "/ring/all", i, 0);
-        device.sendMessage(prefix + "/ring/set", i, 0, 15);
+    if (device) {
+        device.sendMessage(prefix + "/grid/led/level/all", 0);
+        for (var i = 0; i < 4; i++) {
+            device.sendMessage(prefix + "/ring/all", i, 0);
+            device.sendMessage(prefix + "/ring/set", i, 0, 15);
+        }
     }
 }
 
@@ -75,9 +81,11 @@ function onEncoderDelta(encoder, delta) {
     println(JSON.stringify(encs));
 
     var breakpoint = Math.floor(encs[encoder]);
-    deviceConnection.sendMessage(prefix + "/ring/range", encoder, 0, breakpoint, 15);
-    if (breakpoint < 63) {
-        deviceConnection.sendMessage(prefix + "/ring/range", encoder, breakpoint + 1, 63, 0);
+    if (deviceConnection) {
+        deviceConnection.sendMessage(prefix + "/ring/range", encoder, 0, breakpoint, 15);
+        if (breakpoint < 63) {
+            deviceConnection.sendMessage(prefix + "/ring/range", encoder, breakpoint + 1, 63, 0);
+        }
     }
 }
 
@@ -85,6 +93,15 @@ function onEncoderKey(encoder, state) {
 }
 
 function onGridKey(x, y, s) {
+    // Example of responding to an event with LED feedback: toggle LED on keypress.
+    if (deviceConnection) {
+        if (s == 1) {
+            keys[x][y] = keys[x][y] ? 0 : 1;
+            deviceConnection.sendMessage(prefix + "/grid/led/level/set", x, y, 15);
+        } else {
+            deviceConnection.sendMessage(prefix + "/grid/led/level/set", x, y, keys[x][y] ? 6 : 0);
+        }
+    }
 }
 
 function onTilt(sensor, x, y, z) {
@@ -96,7 +113,9 @@ function onDeviceInfo(id, type, port) {
 
         println(JSON.stringify(devices[id]));
 
-        portSetting.setRaw(port);
+        if (portSetting) {
+            portSetting.setRaw(port);
+        }
     }
 }
 
@@ -104,11 +123,13 @@ function connectToDevice(port) {
     println("Connecting to device on port " + port);
 
     var device = host.getOscModule().connectToUdpServer(hostname, port, host.getOscModule().createAddressSpace());
-    device.sendMessage("/sys/host", hostname);
-    device.sendMessage("/sys/port", listenerPort);
-    device.sendMessage("/sys/prefix", prefix);
+    if (device) {
+        device.sendMessage("/sys/host", hostname);
+        device.sendMessage("/sys/port", listenerPort);
+        device.sendMessage("/sys/prefix", prefix);
 
-    onConnection(device);
+        onConnection(device);
+    }
 
     return device;
 }
@@ -154,7 +175,7 @@ function registerGridMethods(prefix, addressSpace) {
         var x = args[0];
         var y = args[1];
         var s = args[2];
-        println("key (" + x + "," + y + ") " + s ? "down" : "up");
+        println("key (" + x + "," + y + ") " + (s ? "down" : "up"));
 
         onGridKey(x, y, s);
     });
