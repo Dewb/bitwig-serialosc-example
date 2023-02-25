@@ -3,8 +3,6 @@
 
 loadAPI(16);
 
-host.setShouldFailOnDeprecatedUse(true);
-
 host.defineController("monome", "serialosc", "1.0", "2213d685-3d30-4de0-b3c4-b86daff826ed", "dewb");
 
 var serialOscConnection = null;
@@ -22,10 +20,6 @@ var prefix = "/bitwig";
 // Variables to hold arc/grid LED state
 var encs = [0, 0, 0, 0];
 var keys = [...Array(16)].map(_ => Array(16).fill(0));
-
-var cursorTrack = null;
-var cursorDevice = null;
-var remoteControls = null;
 
 function init() {
 
@@ -56,6 +50,7 @@ function init() {
         }
     });
 
+    // Create our OSC listener to respond to serialosc global and device messages
     var listenerAddressSpace = oscModule.createAddressSpace();
     listenerAddressSpace.setShouldLogMessages(true);
 
@@ -95,7 +90,11 @@ function clamp(a, min, max) {
 
 function onConnection(device) {
     if (device) {
+        // for grids, clear the LEDs and enable the tilt sensor (if present)
         device.sendMessage(prefix + "/grid/led/level/all", 0);
+        device.sendMessage(prefix + "/tilt/set", 0, 1);
+
+        // for arcs, clear all LEDs except the first
         for (var i = 0; i < 4; i++) {
             device.sendMessage(prefix + "/ring/all", i, 0);
             device.sendMessage(prefix + "/ring/set", i, 0, 15);
@@ -217,8 +216,8 @@ function registerGridMethods(prefix, addressSpace) {
         var args = message.getArguments();
         var sensor = args[0];
         var x = args[1];
-        var y = args[1];
-        var z = args[1];
+        var y = args[2];
+        var z = args[3];
         println("tilt " + sensor + " (" + x + "," + y + "," + z + ")");
 
         onTilt(sensor, x, y, z);
